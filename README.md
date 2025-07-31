@@ -19,7 +19,7 @@ This project utilizes 1G/10G/25G Switching Ethernet Subsystem configured for GTY
 
 ## **Build Instructions**
 
-### **Vivado:**
+### **Vivado 2022.2:**
 
 Enter the `Scripts` directory. From the command line run the following:
 
@@ -31,7 +31,7 @@ The Vivado project will be built in the `Hardware` directory.
 
 There is currently no baremetal Vitis support for the 1G/10G/25G IP.
 
-### **PetaLinux**:
+### **PetaLinux 2023.2**:
 
 Enter the `Software/PetaLinux/` directory. From the command line run the following:
 
