@@ -1,0 +1,53 @@
+/include/ "system-conf.dtsi"
+/ {
+};
+
+
+&i2c1 {
+    status = "okay";
+    clock-frequency = <400000>;
+    i2c-mux@74 { /* u49 */
+        compatible = "nxp,pca9548";
+        #address-cells = <1>;
+        #size-cells = <0>;
+        reg = <0x74>;
+        /delete-node/ i2c@3;
+        i2c@3 { /* i2c mw 74 0 8 */
+            #address-cells = <1>;
+            #size-cells = <0>;
+            reg = <3>;
+            si570_2: clock-generator@5d {
+                #clock-cells = <0>;
+                compatible = "silabs,si570";
+                reg = <0x5d>;
+                temperature-stability = <50>;
+                factory-fout = <156250000>;
+                clock-frequency = <156250000>;
+            };
+        };
+    };
+};
+
+
+
+&axi_dma_0 {
+	compatible = "xlnx,eth-dma";
+	xlnx,include-dre;
+};
+
+&ethernet_1_10_25g_0 {
+	axistream-connected = <&axi_dma_0>;
+	axistream-control-connected = <&axi_dma_0>;
+	interrupt-names = "mm2s_introut", "s2mm_introut";
+	interrupt-parent = <&gic>;
+	interrupts = <0 90 4 0 89 4>;
+	managed = "in-band-status";
+	phy-mode = "internal";
+	xlnx,channel-ids = "1";
+	xlnx,include-dre;
+    xlnx,num-queues = [00 01];
+    xlnx,addrwidth = <0x20>;
+	xlnx,runtime-switch = "1G / 10G";
+	xlnx,line-rate = <0x0a>;
+	clock_stability-gpios = <&axi_gpio_0 0x00 0x00>;
+};

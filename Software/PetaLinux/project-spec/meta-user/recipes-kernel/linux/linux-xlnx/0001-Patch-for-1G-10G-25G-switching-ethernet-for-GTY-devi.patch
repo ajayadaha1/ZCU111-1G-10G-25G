@@ -1,0 +1,187 @@
+From ac4ad679ada9795573c09de2909fd551331f180d Mon Sep 17 00:00:00 2001
+From: Ajaya Dahal <ajayad@amd.com>
+Date: Wed, 30 Jul 2025 18:48:05 -0700
+Subject: [PATCH] Patch for 1G/10G/25G switching ethernet for GTY devices
+
+---
+ .../net/ethernet/xilinx/xilinx_axienet_main.c | 37 +++++++++++++++----
+ 1 file changed, 30 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/net/ethernet/xilinx/xilinx_axienet_main.c b/drivers/net/ethernet/xilinx/xilinx_axienet_main.c
+index 905c0b8bb068..4c10110ade9b 100644
+--- a/drivers/net/ethernet/xilinx/xilinx_axienet_main.c
++++ b/drivers/net/ethernet/xilinx/xilinx_axienet_main.c
+@@ -801,7 +801,7 @@ void __axienet_device_reset(struct axienet_dma_q *q)
+ 	 * they both reset the entire DMA core, so only one needs to be used.
+ 	 */
+ 	axienet_dma_out32(q, XAXIDMA_TX_CR_OFFSET, XAXIDMA_CR_RESET_MASK);
+-	timeout = DELAY_OF_ONE_MILLISEC;
++	timeout = DELAY_OF_ONE_MILLISEC*100;
+ 	while (axienet_dma_in32(q, XAXIDMA_TX_CR_OFFSET) &
+ 				XAXIDMA_CR_RESET_MASK) {
+ 		udelay(1);
+@@ -847,9 +847,10 @@ static int axienet_device_reset(struct net_device *ndev)
+ 		if (ret)
+ 			return ret;
+ 	}
+-
++	
+ 	for_each_rx_dma_queue(lp, i) {
+ 		q = lp->dq[i];
++//		printk(" axienet_device_reset(): rx dma reset ################################################");
+ 		__axienet_device_reset(q);
+ 	}
+ 
+@@ -2064,9 +2065,13 @@ static int axienet_open(struct net_device *ndev)
+ 	 * including the MDIO. MDIO must be disabled before resetting.
+ 	 * Hold MDIO bus lock to avoid MDIO accesses during the reset.
+ 	 */
++
++//	printk(KERN_INFO " axienet_open(): Before reset ##################################");
+ 	axienet_lock_mii(lp);
+ 	ret = axienet_device_reset(ndev);
+ 	axienet_unlock_mii(lp);
++//	printk(KERN_INFO " axienet_open(): AFTER reset #####################################");
++
+ 	if (ret < 0) {
+ 		dev_err(lp->dev, "axienet_device_reset failed\n");
+ 		return ret;
+@@ -2078,7 +2083,7 @@ static int axienet_open(struct net_device *ndev)
+ 			dev_err(lp->dev, "phylink_of_phy_connect() failed: %d\n", ret);
+ 			return ret;
+ 		}
+-
++//		printk(" axienet_open(): Start phylink#########################################################");
+ 		phylink_start(lp->phylink);
+ 	}
+ 
+@@ -2103,6 +2108,7 @@ static int axienet_open(struct net_device *ndev)
+ 		napi_enable(&lp->napi[i]);
+ 	}
+ 	for_each_tx_dma_queue(lp, i) {
++//		printk(" axienet_open(): Start dma queue #########################################################");
+ 		struct axienet_dma_q *q = lp->dq[i];
+ #ifdef CONFIG_AXIENET_HAS_MCDMA
+ 		/* Enable interrupts for Axi MCDMA Tx */
+@@ -2120,6 +2126,7 @@ static int axienet_open(struct net_device *ndev)
+ 		}
+ 
+ 	for_each_rx_dma_queue(lp, i) {
++//		printk(" axienet_open(): Start RX dma queue #########################################################");
+ 		struct axienet_dma_q *q = lp->dq[i];
+ #ifdef CONFIG_AXIENET_HAS_MCDMA
+ 		/* Enable interrupts for Axi MCDMA Rx */
+@@ -2252,11 +2259,15 @@ static int axienet_open(struct net_device *ndev)
+ 		if (ret)
+ 			goto err_eth_irq;
+ 	}
++//	printk(" axienet_open(): ###############################");
++//	printk(lp->axienet_config->mactype);
++//	printk(" axienet_open(): ################################");
+ 
+ 	/* If Runtime speed switching supported */
+ 	if (lp->axienet_config->mactype == XAXIENET_10G_25G &&
+ 	    (axienet_ior(lp, XXV_STAT_CORE_SPEED_OFFSET) &
+ 	     XXV_STAT_CORE_SPEED_RTSW_MASK)) {
++//		printk(" axienet_open(): Inside runtime speed switching #########################################################");
+ 		axienet_iow(lp, XXVS_AN_ABILITY_OFFSET,
+ 			    XXV_AN_10G_ABILITY_MASK | XXV_AN_25G_ABILITY_MASK);
+ 		axienet_iow(lp, XXVS_AN_CTL1_OFFSET,
+@@ -2346,6 +2357,7 @@ static int axienet_stop(struct net_device *ndev)
+ 
+ 		/* Do a reset to ensure DMA is really stopped */
+ 		axienet_lock_mii(lp);
++//		printk(" axienet_stop(): AM I really here? ############################");
+ 		__axienet_device_reset(q);
+ 		axienet_unlock_mii(lp);
+ 		free_irq(q->tx_irq, ndev);
+@@ -3151,6 +3163,7 @@ static int __maybe_unused axienet_mcdma_probe(struct platform_device *pdev,
+ 	}
+ 
+ 	ret = of_property_read_u8(np, "xlnx,addrwidth", (u8 *)&lp->dma_mask);
++
+ 	if (ret < 0 || lp->dma_mask < XAE_DMA_MASK_MIN ||
+ 	    lp->dma_mask > XAE_DMA_MASK_MAX) {
+ 		dev_info(&pdev->dev, "missing/invalid xlnx,addrwidth property, using default\n");
+@@ -3210,13 +3223,15 @@ static int __maybe_unused axienet_dma_probe(struct platform_device *pdev,
+ 			}
+ 			q->eth_hasdre = of_property_read_bool(np,
+ 							      "xlnx,include-dre");
+-			ret = of_property_read_u8(np, "xlnx,addrwidth",
+-						  (u8 *)&lp->dma_mask);
++			ret = of_property_read_u16(np, "xlnx,addrwidth",
++						  (u16 *)&lp->dma_mask);
++//			printk(" axienet_dma_probe(): addrwidth = %d#########################################", lp->dma_mask);
+ 			if (ret <  0 || lp->dma_mask < XAE_DMA_MASK_MIN ||
+ 			    lp->dma_mask > XAE_DMA_MASK_MAX) {
+ 				dev_info(&pdev->dev, "missing/invalid xlnx,addrwidth property, using default\n");
+ 				lp->dma_mask = XAE_DMA_MASK_MIN;
+ 			}
++			
+ 
+ 		} else {
+ 			dev_err(&pdev->dev, "missing axistream-connected property\n");
+@@ -3239,6 +3254,7 @@ static int __maybe_unused axienet_dma_probe(struct platform_device *pdev,
+ 		netif_napi_add(ndev, &lp->napi[i], xaxienet_rx_poll);
+ 	}
+ 
++//	printk(" axienet_dma_probe(): DMA probe completed ################################################");
+ 	return 0;
+ }
+ 
+@@ -3997,6 +4013,7 @@ static int axienet_probe(struct platform_device *pdev)
+ 
+ 	ret = of_property_read_u16(pdev->dev.of_node, "xlnx,num-queues",
+ 				   &num_queues);
++//	printk(" axienet_probe(): Number of queue: %d ###########################################", ret);
+ 	if (ret) {
+ #ifndef CONFIG_AXIENET_HAS_MCDMA
+ 		num_queues = 1;
+@@ -4433,7 +4450,7 @@ static int axienet_probe(struct platform_device *pdev)
+ 			goto cleanup_clk;
+ 		}
+ 	}
+-
++	
+ 	ret = axienet_dma_clk_init(pdev);
+ 	if (ret) {
+ 		if (ret != -EPROBE_DEFER)
+@@ -4449,6 +4466,8 @@ static int axienet_probe(struct platform_device *pdev)
+ 		goto err_disable_clk;
+ 	}
+ 
++//	printk(" axienet_probe(): DMA clock completed ################################################");
++
+ 	lp->eth_irq = platform_get_irq(pdev, 0);
+ 	/* Check for Ethernet core IRQ (optional) */
+ 	if (lp->eth_irq <= 0)
+@@ -4468,6 +4487,8 @@ static int axienet_probe(struct platform_device *pdev)
+ 	lp->coalesce_count_tx = XAXIDMA_DFT_TX_THRESHOLD;
+ 	lp->coalesce_usec_tx = XAXIDMA_DFT_TX_USEC;
+ 
++//printk(" axienet_probe(): Before MAC specifics ################################################");
++
+ 	if (lp->axienet_config->mactype != XAXIENET_10G_25G &&
+ 	    lp->axienet_config->mactype != XAXIENET_1G_10G_25G &&
+ 	    lp->axienet_config->mactype != XAXIENET_MRMAC &&
+@@ -4512,7 +4533,7 @@ static int axienet_probe(struct platform_device *pdev)
+ 		lp->phylink_config.dev = &ndev->dev;
+ 		lp->phylink_config.type = PHYLINK_NETDEV;
+ 		lp->phylink_config.mac_capabilities = MAC_SYM_PAUSE | MAC_ASYM_PAUSE;
+-
++		
+ 		if (lp->axienet_config->mactype == XAXIENET_10G_25G) {
+ 			u32 core_speed;
+ 
+@@ -4531,6 +4552,8 @@ static int axienet_probe(struct platform_device *pdev)
+ 				}
+ 			}
+ 		} else if (lp->axienet_config->mactype == XAXIENET_1G_10G_25G) {
++
++//			printk("  axienet_probe(): Inside MAC ################################################");
+ 			const char *rt_switch;
+ 
+ 			of_property_read_string(pdev->dev.of_node,
+-- 
+2.34.1
+
